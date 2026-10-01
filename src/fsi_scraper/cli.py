@@ -1,7 +1,11 @@
 """fsi-scraper command line interface.
 
 `discover` walks a course and reports every downloadable asset. It writes
-nothing and downloads no course material -- that is `fetch`.
+nothing and downloads no course material.
+
+`fetch` runs the same walk, then downloads each asset into data/raw/.
+
+`parse` reads the downloaded FAST student texts and prints the dialogs.
 
 Some courses are one page; others are an index plus a page per unit. The
 crawl handles both: it follows whatever `parser.follow()` yields, visits each
@@ -19,6 +23,7 @@ from pathlib import Path
 
 import requests
 
+from . import fetch, parse_fast
 from .models import Resource
 from .sources import base, fsi_fast, fsi_programmatic  # noqa: F401
 
@@ -46,15 +51,17 @@ class Fetcher:
         safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in url)[-150:]
         return self.cache / f"{safe}.html"
 
+    def _wait(self) -> None:
+        wait = self.delay - (time.monotonic() - self._last)
+        if wait > 0:
+            time.sleep(wait)
+
     def get(self, url: str) -> str:
         cached = self._cache_path(url)
         if cached and cached.exists():
             return cached.read_text(encoding="utf-8")
 
-        wait = self.delay - (time.monotonic() - self._last)
-        if wait > 0:
-            time.sleep(wait)
-
+        self._wait()
         response = self.session.get(url, timeout=30)
         self._last = time.monotonic()
         self.requests_made += 1
@@ -64,6 +71,15 @@ class Fetcher:
             cached.parent.mkdir(parents=True, exist_ok=True)
             cached.write_text(response.text, encoding="utf-8")
         return response.text
+
+    def stream(self, url: str) -> requests.Response:
+        """GET a large file. Same session and delay; the body is read later."""
+        self._wait()
+        response = self.session.get(url, timeout=60, stream=True)
+        self._last = time.monotonic()
+        self.requests_made += 1
+        response.raise_for_status()
+        return response
 
 
 def crawl(
@@ -161,6 +177,69 @@ def cmd_discover(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fetch(args: argparse.Namespace) -> int:
+    parser = base.get(args.course)
+    fetcher = Fetcher(delay=args.delay,
+                      cache=Path(args.cache) if args.cache else None)
+    resources = crawl(parser, fetcher, parser.page_url, max_pages=args.max_pages)
+    if args.kind:
+        resources = [r for r in resources if r.kind in args.kind]
+    if not resources:
+        print("nothing to fetch", file=sys.stderr)
+        return 1
+
+    root = Path(args.out)
+    got = have = failed = 0
+    total_bytes = 0
+    for i, resource in enumerate(resources, 1):
+        try:
+            result = fetch.download(fetcher, resource, root)
+        except (requests.RequestException, OSError) as exc:
+            failed += 1
+            print(f"  ! {resource.filename}: {exc}", file=sys.stderr)
+            continue
+        total_bytes += result.bytes
+        if result.downloaded:
+            got += 1
+        else:
+            have += 1
+        status = "got " if result.downloaded else "have"
+        print(f"  [{i}/{len(resources)}] {status} {result.bytes / 1e6:7.1f} MB  "
+              f"{result.path}", file=sys.stderr)
+
+    print(f"\n{got} downloaded, {have} already on disk, {failed} failed; "
+          f"{total_bytes / 1e6:.1f} MB in {root}", file=sys.stderr)
+    return 1 if failed else 0
+
+
+def cmd_parse(args: argparse.Namespace) -> int:
+    folder = Path(args.raw) / "brazilian-portuguese-fast" / "pdf"
+    books = sorted(folder.glob("*.pdf"))
+    if not books:
+        print(f"no PDFs in {folder} -- run `fsi-scraper fetch --kind pdf` first",
+              file=sys.stderr)
+        return 1
+
+    lessons = parse_fast.parse_books(books)
+    if args.lesson:
+        lessons = [lesson for lesson in lessons if lesson.number == args.lesson]
+
+    if args.format == "json":
+        print(json.dumps([dataclasses.asdict(lesson) for lesson in lessons],
+                         indent=2, ensure_ascii=False))
+    else:
+        for lesson in lessons:
+            print(f"\nLesson {lesson.number}: {lesson.location} / {lesson.title}")
+            for line in lesson.lines:
+                print(f"  {line.speaker or '':<3} {line.text}")
+
+    total = sum(len(lesson.lines) for lesson in lessons)
+    empty = [lesson.number for lesson in lessons if not lesson.lines]
+    print(f"\n{len(lessons)} lessons, {total} dialog lines"
+          + (f"; no dialog found in {empty}" if empty else ""), file=sys.stderr)
+    return 1 if empty else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="fsi-scraper")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -175,6 +254,24 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--cache", help="directory to cache fetched pages in")
     d.add_argument("--max-pages", type=int, default=200)
     d.set_defaults(func=cmd_discover)
+
+    f = sub.add_parser("fetch", help="download a course's assets into data/raw")
+    f.add_argument("--course", default="brazilian-portuguese-fast",
+                   choices=base.registered())
+    f.add_argument("--kind", action="append", choices=("pdf", "audio", "zip"),
+                   help="only this kind; repeat for more (default: all)")
+    f.add_argument("--out", default="data/raw", help="where files go")
+    f.add_argument("--delay", type=float, default=DEFAULT_DELAY,
+                   help="seconds between HTTP requests (default 1.0)")
+    f.add_argument("--cache", help="directory to cache fetched pages in")
+    f.add_argument("--max-pages", type=int, default=200)
+    f.set_defaults(func=cmd_fetch)
+
+    p = sub.add_parser("parse", help="print the FAST dialogs from downloaded PDFs")
+    p.add_argument("--raw", default="data/raw", help="where fetch put the files")
+    p.add_argument("--lesson", type=int, help="only this lesson number")
+    p.add_argument("--format", choices=("table", "json"), default="table")
+    p.set_defaults(func=cmd_parse)
 
     args = ap.parse_args(argv)
     return args.func(args)
