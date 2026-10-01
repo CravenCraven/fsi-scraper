@@ -13,6 +13,10 @@ produces, not what the printed book says:
 * Lesson 30's dialog has no "Sample Dialog" heading, so the dialog is found
   by its section ("Seeing It"), not by that heading.
 
+Lesson titles and locations go through TITLE_FIXES. There are 30 of them,
+from a book that will never change, so a hand-checked table is exact where
+pattern-based fixes could break correct words. Dialog text is not touched.
+
 Each lesson's dialog sits on one page. It runs from the "Seeing It" heading
 to the page footer (e.g. "2.2", OCR'd as "5.t" once) or the next section.
 """
@@ -33,6 +37,26 @@ SPEAKER = re.compile(r"^(A|B|[B8]\s?[12])\s?\.\s+(.*)$")
 DIRECTION = re.compile(r"^\(.*\)$")  # "(A few minutes later)"
 SKIP = re.compile(r"^(Sample\s+Dialog|Looking at the dialog|clues, see how much|"
                   r"contextual clues, see how much)")
+
+
+# lesson number -> (location, title) as printed in the book. Only lessons
+# where the OCR got it wrong are listed.
+TITLE_FIXES: dict[int, tuple[str, str]] = {
+    1: ("AT THE HOTEL", "Checking In"),
+    2: ("AT THE HOTEL", "Ordering Breakfast"),
+    5: ("AT THE HOTEL", "Checking for Messages"),
+    7: ("ON THE STREET", "Asking for Directions (Inside of a building)"),
+    9: ("AT THE OFFICE", "Answering the Telephone"),
+    10: ("AT THE OFFICE", "Leaving a Message"),
+    12: ('IN A "LANCHONETE"', "Ordering Lunch"),
+    13: ("AT A PARTY", "Being Introduced to Someone"),
+    14: ("TELEPHONE EXCHANGES", "Answering a Wrong Number"),
+    19: ("AT AN OPEN-AIR MARKET", "Buying Fresh Food"),
+    20: ("AT THE BUTCHER SHOP", "Buying Meat"),
+    26: ("HOUSEHOLD HELP", "Giving Instructions (On the Way Out)"),
+    29: ("HANDLING EMERGENCIES", "Reporting an Assault to the Police"),
+    30: ("AT THE GAS STATION", "Filling up with Gas"),
+}
 
 
 @dataclass(frozen=True)
@@ -128,7 +152,7 @@ def parse_lessons(pages: list[str]) -> Iterator[Lesson]:
                             if SEEING_IT.search(pages[i])), None)
         lines = (parse_dialog(pages[dialog_page], number, dialog_page + 1)
                  if dialog_page is not None else [])
-        location, title = _title(pages[first])
+        location, title = TITLE_FIXES.get(number) or _title(pages[first])
         yield Lesson(number, location, title, tuple(lines))
 
 

@@ -4,7 +4,12 @@ No PDFs and no network: each test hands the parser a few pages of text
 copied from the FAST student texts, mistakes included.
 """
 
-from fsi_scraper.parse_fast import lesson_starts, parse_dialog, parse_lessons
+from fsi_scraper.parse_fast import (
+    TITLE_FIXES,
+    lesson_starts,
+    parse_dialog,
+    parse_lessons,
+)
 
 SCENE_L1 = """I. Setting the Scene
 BRAZILlAN PORTUGUESE FAST
@@ -102,3 +107,13 @@ def test_whole_lesson_from_pages():
         1, "AT THE HOTEL", "Checking In")
     assert len(lesson.lines) == 4
     assert lesson.lines[0].page == 2
+
+
+def test_title_fix_replaces_ocr_title():
+    scene = SCENE_L1.replace("Checking In", "Checkingln")
+    lesson = next(parse_lessons([scene, DIALOG_L1]))
+    assert lesson.title == "Checking In"
+
+
+def test_title_fixes_only_cover_real_lessons():
+    assert set(TITLE_FIXES) <= set(range(1, 31))

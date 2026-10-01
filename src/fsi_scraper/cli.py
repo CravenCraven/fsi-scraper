@@ -9,6 +9,8 @@ nothing and downloads no course material.
 
 `load` writes the file list and the parsed lessons into Postgres.
 
+`export` reads a small sample back out of Postgres as JSON for the demo page.
+
 Some courses are one page; others are an index plus a page per unit. The
 crawl handles both: it follows whatever `parser.follow()` yields, visits each
 page once, and sleeps between requests.
@@ -25,7 +27,7 @@ from pathlib import Path
 
 import requests
 
-from . import fetch, load, parse_fast
+from . import export, fetch, load, parse_fast
 from .models import Resource
 from .sources import base, fsi_fast, fsi_programmatic  # noqa: F401
 
@@ -266,6 +268,26 @@ def cmd_load(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    import psycopg
+
+    with psycopg.connect(load.database_url()) as conn:
+        data = export.export(conn, limit=args.limit)
+
+    if not data["lessons"]:
+        print("database has no lessons -- run `fsi-scraper load` first",
+              file=sys.stderr)
+        return 1
+
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    Path(args.out).write_text(text, encoding="utf-8")
+    t = data["totals"]
+    print(f"wrote {args.out}: {len(data['lessons'])} sample lessons "
+          f"(of {t['lessons']} lessons, {t['dialog_lines']} lines, "
+          f"{t['files']} files)", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="fsi-scraper")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -305,6 +327,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="seconds between HTTP requests (default 1.0)")
     lo.add_argument("--cache", help="directory to cache fetched pages in")
     lo.set_defaults(func=cmd_load)
+
+    ex = sub.add_parser("export", help="write a JSON sample for the demo page")
+    ex.add_argument("--out", default="corpus-sample.json")
+    ex.add_argument("--limit", type=int, default=3,
+                    help="how many lessons to include (default 3)")
+    ex.set_defaults(func=cmd_export)
 
     args = ap.parse_args(argv)
     return args.func(args)
