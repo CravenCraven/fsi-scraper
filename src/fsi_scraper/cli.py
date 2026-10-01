@@ -7,6 +7,8 @@ nothing and downloads no course material.
 
 `parse` reads the downloaded FAST student texts and prints the dialogs.
 
+`load` writes the file list and the parsed lessons into Postgres.
+
 Some courses are one page; others are an index plus a page per unit. The
 crawl handles both: it follows whatever `parser.follow()` yields, visits each
 page once, and sleeps between requests.
@@ -23,7 +25,7 @@ from pathlib import Path
 
 import requests
 
-from . import fetch, parse_fast
+from . import fetch, load, parse_fast
 from .models import Resource
 from .sources import base, fsi_fast, fsi_programmatic  # noqa: F401
 
@@ -240,6 +242,30 @@ def cmd_parse(args: argparse.Namespace) -> int:
     return 1 if empty else 0
 
 
+def cmd_load(args: argparse.Namespace) -> int:
+    import psycopg
+
+    course = "brazilian-portuguese-fast"
+    books = sorted((Path(args.raw) / course / "pdf").glob("*.pdf"))
+    if not books:
+        print("no PDFs to parse -- run `fsi-scraper fetch --kind pdf` first",
+              file=sys.stderr)
+        return 1
+
+    fetcher = Fetcher(delay=args.delay,
+                      cache=Path(args.cache) if args.cache else None)
+    parser = base.get(course)
+    resources = crawl(parser, fetcher, parser.page_url, progress=False)
+    lessons = parse_fast.parse_books(books)
+
+    with psycopg.connect(load.database_url()) as conn:
+        counts = load.load(conn, course, resources, lessons)
+
+    print("loaded %d resources, %d lessons, %d dialog lines" % counts,
+          file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="fsi-scraper")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -272,6 +298,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--lesson", type=int, help="only this lesson number")
     p.add_argument("--format", choices=("table", "json"), default="table")
     p.set_defaults(func=cmd_parse)
+
+    lo = sub.add_parser("load", help="write files and FAST lessons into Postgres")
+    lo.add_argument("--raw", default="data/raw", help="where fetch put the files")
+    lo.add_argument("--delay", type=float, default=DEFAULT_DELAY,
+                    help="seconds between HTTP requests (default 1.0)")
+    lo.add_argument("--cache", help="directory to cache fetched pages in")
+    lo.set_defaults(func=cmd_load)
 
     args = ap.parse_args(argv)
     return args.func(args)
