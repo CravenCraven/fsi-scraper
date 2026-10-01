@@ -12,7 +12,7 @@ that would break table-row parsing.
 from __future__ import annotations
 
 import re
-from typing import Iterator
+from collections.abc import Iterator
 from urllib.parse import unquote, urlparse
 
 from bs4 import BeautifulSoup

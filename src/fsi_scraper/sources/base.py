@@ -10,7 +10,7 @@ the crawl terminates after one fetch. Multi-page courses override `follow`.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Iterable, Iterator
+from collections.abc import Iterable, Iterator
 
 from ..models import Resource
 

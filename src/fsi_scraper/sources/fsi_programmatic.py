@@ -19,7 +19,7 @@ Asset classification keys off the CDN URL, which encodes volume and unit.
 from __future__ import annotations
 
 import re
-from typing import Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from urllib.parse import unquote, urljoin, urlparse
 
 from bs4 import BeautifulSoup

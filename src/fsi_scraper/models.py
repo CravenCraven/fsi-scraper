@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Literal, Optional
+from datetime import UTC, datetime
+from typing import Literal
 
 Kind = Literal["pdf", "audio", "zip"]
 
@@ -24,12 +24,12 @@ class Resource:
     url: str
     filename: str
     title: str
-    section: Optional[str] = None
-    ordinal: Optional[int] = None
-    part: Optional[str] = None
-    declared_bytes: Optional[int] = None
+    section: str | None = None
+    ordinal: int | None = None
+    part: str | None = None
+    declared_bytes: int | None = None
     discovered_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(UTC)
     )
 
     def key(self) -> str:
