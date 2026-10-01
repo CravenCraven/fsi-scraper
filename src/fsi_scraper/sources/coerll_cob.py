@@ -40,6 +40,10 @@ class CoerllCobParser(CourseParser):
     source = "coerll"
     provider = "coerll"
     course = "conversa-brasileira"
+    title = "Conversa Brasileira"
+    license = "CC BY"
+    credit = ("Conversa Brasileira, COERLL, The University of Texas at Austin "
+              "(CC BY)")
     page_url = "https://cob.coerll.utexas.edu/brazilpod/cob/"
 
     def follow(self, html: str, page_url: str = "") -> Iterable[str]:

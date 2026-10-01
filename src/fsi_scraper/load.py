@@ -17,6 +17,7 @@ import psycopg
 
 from .models import Resource
 from .parse_fast import Lesson
+from .sources.base import CourseParser
 
 DEFAULT_URL = "postgresql://postgres:postgres@localhost:5432/corpus"
 
@@ -41,6 +42,17 @@ ON CONFLICT (url) DO UPDATE SET
 # discovered_at is left out of the update on purpose: it keeps the date the
 # file was FIRST seen, which is the useful one.
 
+UPSERT_COURSE = """
+INSERT INTO course (slug, title, provider, url, license, credit)
+VALUES (%s, %s, %s, %s, %s, %s)
+ON CONFLICT (slug) DO UPDATE SET
+    title = EXCLUDED.title,
+    provider = EXCLUDED.provider,
+    url = EXCLUDED.url,
+    license = EXCLUDED.license,
+    credit = EXCLUDED.credit
+"""
+
 UPSERT_LESSON = """
 INSERT INTO lesson (course, number, location, title)
 VALUES (%s, %s, %s, %s)
@@ -51,8 +63,8 @@ RETURNING id
 """
 
 INSERT_LINE = """
-INSERT INTO dialog_line (lesson_id, seq, speaker, text, page)
-VALUES (%s, %s, %s, %s, %s)
+INSERT INTO dialog_line (lesson_id, seq, speaker, text, translation, page)
+VALUES (%s, %s, %s, %s, %s, %s)
 """
 
 
@@ -62,7 +74,7 @@ def database_url() -> str:
 
 def load(
     conn: psycopg.Connection,
-    course: str,
+    source: CourseParser,
     resources: list[Resource],
     lessons: list[Lesson],
 ) -> tuple[int, int, int]:
@@ -71,8 +83,12 @@ def load(
     The caller's `with psycopg.connect(...)` block is the transaction: if
     anything here fails, none of it is saved.
     """
+    course = source.course
     lines_written = 0
     with conn.cursor() as cur:
+        # The course row first: lessons point at it.
+        cur.execute(UPSERT_COURSE, (course, source.title, source.provider,
+                                    source.page_url, source.license, source.credit))
         for resource in resources:
             cur.execute(UPSERT_RESOURCE, dataclasses.asdict(resource))
 
@@ -86,7 +102,8 @@ def load(
             cur.execute("DELETE FROM dialog_line WHERE lesson_id = %s",
                         (lesson_id,))
             cur.executemany(INSERT_LINE, [
-                (lesson_id, line.seq, line.speaker, line.text, line.page)
+                (lesson_id, line.seq, line.speaker, line.text, line.translation,
+                 line.page)
                 for line in lesson.lines
             ])
             lines_written += len(lesson.lines)

@@ -31,6 +31,10 @@ class FsiFastParser(CourseParser):
     source = "fsi-language-courses"
     provider = "fsi"
     course = "brazilian-portuguese-fast"
+    title = "FSI Brazilian Portuguese FAST"
+    license = "public domain"
+    credit = ("FSI Brazilian Portuguese FAST, US Foreign Service Institute "
+              "(public domain)")
     page_url = (
         "https://www.fsi-language-courses.org/fsi-brazilian-portuguese-fast-course/"
     )

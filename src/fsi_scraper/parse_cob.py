@@ -36,11 +36,13 @@ from pathlib import Path
 from .parse_fast import DialogLine, Lesson
 
 SYMBOL_FONTS = ("ZapfDingbats", "AppleGothic", "HiraKaku")
-SAME_LINE = 6.0  # points; small raised words sit ~5pt off their line, lines are 14+ apart
+# Points. Small raised words sit ~5pt off their line; lines are 14+ apart.
+SAME_LINE = 6.0
 HEADER_Y, FOOTER_Y = 740.0, 85.0  # page chrome lives above / below these
 
 SPEAKER = re.compile(r"^([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇ .]{1,20}?):\s*(.*)$")
 SPEAKER_FIXES = {"DESINE": "DENISE"}
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 COMMENTARY = re.compile(r"^Behind the Scenes", re.IGNORECASE)
 NOTES_START = re.compile(r"^\d{1,2}\.\s+\S")
 CHROME = re.compile(r"^(\d{4}\s+COERLL|The University of Texas at Austin|\d{1,3}|"
@@ -54,6 +56,8 @@ PT_WORDS = {
     "ou", "também", "aqui", "lá", "então", "nossa", "gente", "tem", "tô",
     "vai", "ia", "foi", "era", "por", "pois", "meu", "minha", "seu", "sua",
     "como", "quando", "onde", "mais", "já", "só", "ai", "oi", "olha", "nada",
+    "tava", "cê", "pô", "ali", "aquele", "aquela", "outra", "outro", "cara",
+    "fazer", "ver", "ter", "dar", "eles", "elas", "nós", "lhe", "te", "vou",
 }
 EN_WORDS = {
     "the", "i", "you", "is", "it", "and", "she", "he", "how", "what", "this",
@@ -66,6 +70,7 @@ EN_WORDS = {
 # "as" and "no" are left out of both lists: they are common words in both
 # languages, and counting them pulled English lines into the Portuguese.
 PT_LETTERS = re.compile(r"[ãõçáéíóúâêô]", re.IGNORECASE)
+EN_SPELLING = re.compile(r"th|\w+ing\b|\w'(s|t|re|ll|ve|m|d)\b", re.IGNORECASE)
 WORD = re.compile(r"[A-Za-zÀ-ÿ']+")
 
 
@@ -113,17 +118,26 @@ def page_lines(items: list[Item], chrome: bool = True) -> list[str]:
     out = []
     for line in lines:
         text = " ".join(i.text.strip() for i in sorted(line, key=lambda i: i.x))
+        # Lesson 30 has a NUL byte where a symbol was. Postgres refuses NUL in
+        # text, and no control character belongs in dialog, so drop them all.
+        text = CONTROL.sub("", text)
         text = re.sub(r"\s+", " ", text).strip()
         if text:
             out.append(text)
     return out
 
 
-def score(line: str) -> int:
-    """> 0 looks Portuguese, < 0 looks English, 0 can't tell."""
+def evidence(line: str) -> tuple[int, int]:
+    """(Portuguese clues, English clues) found in a line."""
     words = [w.lower() for w in WORD.findall(line)]
     pt = sum(w in PT_WORDS for w in words) + len(PT_LETTERS.findall(line))
-    en = sum(w in EN_WORDS for w in words)
+    en = sum(w in EN_WORDS for w in words) + len(EN_SPELLING.findall(line))
+    return pt, en
+
+
+def score(line: str) -> int:
+    """> 0 looks Portuguese, < 0 looks English, 0 can't tell."""
+    pt, en = evidence(line)
     return pt - en
 
 
@@ -133,23 +147,31 @@ def split_turn(lines: list[str]) -> tuple[str, str | None]:
     The first line is always Portuguese: it is the text after the name.
     Each later line is judged on two clues:
 
-    * its words: clearly Portuguese (score >= 2) stays Portuguese, anything
-      that leans English (score < 0) starts the translation;
+    * its words: clearly Portuguese (score >= 2), or some Portuguese and no
+      English at all, stays Portuguese; anything that leans English
+      (score < 0) starts the translation. English clues include spelling
+      Portuguese never uses: "th", "-ing", "it's" and "don't";
     * if the words can't decide (score 0 or 1), the line before breaks the
       tie: cut off mid-sentence means this line continues it, a finished
       sentence means this is the translation starting.
 
     From the first English line on, everything is English.
     """
+    # Names and words that need no translation are printed twice:
+    # "Sílvia!" then "Sílvia!". The second copy is the "translation".
+    if len(lines) == 2 and WORD.findall(lines[0]) == WORD.findall(lines[1]):
+        return lines[0].strip(), lines[1].strip()
+
     pt = [lines[0]] if lines else []
     en: list[str] = []
     for line in lines[1:]:
         if en:
             en.append(line)
             continue
-        s = score(line)
+        pt_clues, en_clues = evidence(line)
+        s = pt_clues - en_clues
         unfinished = not pt[-1] or not TERMINAL.search(pt[-1])
-        if s >= 2 or (s >= 0 and unfinished):
+        if s >= 2 or (pt_clues and not en_clues) or (s >= 0 and unfinished):
             pt.append(line)
         else:
             en.append(line)

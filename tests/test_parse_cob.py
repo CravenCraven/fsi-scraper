@@ -107,3 +107,18 @@ def test_behind_the_scenes_turns_are_not_split():
     assert [(x.text, x.translation) for x in lesson.lines] == [(
         "It’d be nice to have different words, one for "
         "‘safado’ and one for ‘desgraçado’...", None)]
+
+
+def test_a_name_printed_twice_is_its_own_translation():
+    assert split_turn(["Guaraná! Guaraná !", "Guaraná! Guaraná!"]) == (
+        "Guaraná! Guaraná !", "Guaraná! Guaraná!")
+
+
+def test_portuguese_with_no_english_clues_continues_after_a_full_stop():
+    pt, en = split_turn([
+        "Pô, pessoal! Eu fiz o único gol da partida, carrego o time nas costas...",
+        "Tava ali no meio do campo tentando",
+        "Hey, guys! I scored the only goal of the game...",
+    ])
+    assert pt.endswith("Tava ali no meio do campo tentando")
+    assert en.startswith("Hey, guys!")

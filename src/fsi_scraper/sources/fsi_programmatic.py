@@ -41,6 +41,9 @@ class FsiProgrammaticParser(CourseParser):
     source = "fsi-language-courses"
     provider = "fsi"
     course = "portuguese-programmatic"
+    title = "FSI Portuguese Programmatic"
+    license = "public domain"
+    credit = "FSI Portuguese Programmatic, US Foreign Service Institute (public domain)"
     page_url = (
         "https://www.fsi-language-courses.org/fsi-portuguese-programmatic-course/"
     )

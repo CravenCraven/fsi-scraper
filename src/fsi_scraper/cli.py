@@ -256,7 +256,7 @@ def cmd_parse(args: argparse.Namespace) -> int:
 def cmd_load(args: argparse.Namespace) -> int:
     import psycopg
 
-    course = "brazilian-portuguese-fast"
+    course = args.course
     books = sorted((Path(args.raw) / course / "pdf").glob("*.pdf"))
     if not books:
         print("no PDFs to parse -- run `fsi-scraper fetch --kind pdf` first",
@@ -267,12 +267,12 @@ def cmd_load(args: argparse.Namespace) -> int:
                       cache=Path(args.cache) if args.cache else None)
     parser = base.get(course)
     resources = crawl(parser, fetcher, parser.page_url, progress=False)
-    lessons = parse_fast.parse_books(books)
+    lessons = TEXT_PARSERS[course](books)
 
     with psycopg.connect(load.database_url()) as conn:
-        counts = load.load(conn, course, resources, lessons)
+        counts = load.load(conn, parser, resources, lessons)
 
-    print("loaded %d resources, %d lessons, %d dialog lines" % counts,
+    print(f"{course}: loaded %d resources, %d lessons, %d dialog lines" % counts,
           file=sys.stderr)
     return 0
 
@@ -291,9 +291,9 @@ def cmd_export(args: argparse.Namespace) -> int:
     text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     Path(args.out).write_text(text, encoding="utf-8")
     t = data["totals"]
-    print(f"wrote {args.out}: {len(data['lessons'])} sample lessons "
-          f"(of {t['lessons']} lessons, {t['dialog_lines']} lines, "
-          f"{t['files']} files)", file=sys.stderr)
+    print(f"wrote {args.out}: {len(data['lessons'])} sample lessons from "
+          f"{len(data['courses'])} courses (of {t['lessons']} lessons, "
+          f"{t['dialog_lines']} lines, {t['files']} files)", file=sys.stderr)
     return 0
 
 
@@ -332,7 +332,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--format", choices=("table", "json"), default="table")
     p.set_defaults(func=cmd_parse)
 
-    lo = sub.add_parser("load", help="write files and FAST lessons into Postgres")
+    lo = sub.add_parser("load", help="write a course's files and lessons into Postgres")
+    lo.add_argument("--course", default="brazilian-portuguese-fast",
+                    choices=sorted(TEXT_PARSERS))
     lo.add_argument("--raw", default="data/raw", help="where fetch put the files")
     lo.add_argument("--delay", type=float, default=DEFAULT_DELAY,
                     help="seconds between HTTP requests (default 1.0)")
@@ -342,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
     ex = sub.add_parser("export", help="write a JSON sample for the demo page")
     ex.add_argument("--out", default="corpus-sample.json")
     ex.add_argument("--limit", type=int, default=3,
-                    help="how many lessons to include (default 3)")
+                    help="how many lessons per course (default 3)")
     ex.set_defaults(func=cmd_export)
 
     args = ap.parse_args(argv)

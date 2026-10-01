@@ -1,3 +1,15 @@
+-- One row per course. License and credit live here because every lesson in
+-- a course shares them. FSI is public domain; COERLL is CC BY, which means
+-- the credit line has to appear wherever its text is shown.
+CREATE TABLE IF NOT EXISTS course (
+    slug     text PRIMARY KEY,
+    title    text NOT NULL,
+    provider text NOT NULL,
+    url      text NOT NULL,
+    license  text NOT NULL,
+    credit   text NOT NULL
+);
+
 -- One row per downloadable asset found by `discover`.
 -- Mirrors fsi_scraper.models.Resource field for field.
 CREATE TABLE IF NOT EXISTS resource (
@@ -19,7 +31,7 @@ CREATE TABLE IF NOT EXISTS resource (
 -- One row per lesson in a course.
 CREATE TABLE IF NOT EXISTS lesson (
     id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    course    text    NOT NULL,
+    course    text    NOT NULL REFERENCES course(slug),
     number    integer NOT NULL,
     location  text    NOT NULL,
     title     text    NOT NULL,
@@ -28,11 +40,12 @@ CREATE TABLE IF NOT EXISTS lesson (
 
 -- One row per line of a lesson's dialog, in order.
 CREATE TABLE IF NOT EXISTS dialog_line (
-    id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    lesson_id bigint  NOT NULL REFERENCES lesson(id) ON DELETE CASCADE,
-    seq       integer NOT NULL,
-    speaker   text,
-    text      text    NOT NULL,
-    page      integer NOT NULL,
+    id          bigint  GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    lesson_id   bigint  NOT NULL REFERENCES lesson(id) ON DELETE CASCADE,
+    seq         integer NOT NULL,
+    speaker     text,
+    text        text    NOT NULL,
+    translation text,             -- English, when the source gives one
+    page        integer NOT NULL,
     UNIQUE (lesson_id, seq)
 );

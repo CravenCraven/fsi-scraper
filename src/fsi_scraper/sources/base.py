@@ -22,6 +22,10 @@ class CourseParser(ABC):
     provider: str
     course: str
     page_url: str
+    # Shown wherever this course's text appears, so they live with the source.
+    title: str
+    license: str
+    credit: str
 
     @abstractmethod
     def parse(self, html: str, page_url: str) -> Iterator[Resource]:
