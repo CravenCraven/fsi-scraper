@@ -66,6 +66,7 @@ class DialogLine:
     speaker: str | None  # "A", "B", "B1", "B2", or None for a stage direction
     text: str
     page: int  # 1-based page in the PDF
+    translation: str | None = None  # English, where the source gives one
 
 
 @dataclass(frozen=True)

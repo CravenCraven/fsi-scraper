@@ -27,9 +27,9 @@ from pathlib import Path
 
 import requests
 
-from . import export, fetch, load, parse_fast
+from . import export, fetch, load, parse_cob, parse_fast
 from .models import Resource
-from .sources import base, fsi_fast, fsi_programmatic  # noqa: F401
+from .sources import base, coerll_cob, fsi_fast, fsi_programmatic  # noqa: F401
 
 USER_AGENT = (
     "fsi-scraper/0.1 (+https://github.com/CravenCraven/fsi-scraper) "
@@ -216,15 +216,22 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+# course -> function that turns that course's PDFs into lessons
+TEXT_PARSERS = {
+    "brazilian-portuguese-fast": parse_fast.parse_books,
+    "conversa-brasileira": parse_cob.parse_books,
+}
+
+
 def cmd_parse(args: argparse.Namespace) -> int:
-    folder = Path(args.raw) / "brazilian-portuguese-fast" / "pdf"
+    folder = Path(args.raw) / args.course / "pdf"
     books = sorted(folder.glob("*.pdf"))
     if not books:
         print(f"no PDFs in {folder} -- run `fsi-scraper fetch --kind pdf` first",
               file=sys.stderr)
         return 1
 
-    lessons = parse_fast.parse_books(books)
+    lessons = TEXT_PARSERS[args.course](books)
     if args.lesson:
         lessons = [lesson for lesson in lessons if lesson.number == args.lesson]
 
@@ -236,6 +243,8 @@ def cmd_parse(args: argparse.Namespace) -> int:
             print(f"\nLesson {lesson.number}: {lesson.location} / {lesson.title}")
             for line in lesson.lines:
                 print(f"  {line.speaker or '':<3} {line.text}")
+                if line.translation:
+                    print(f"  {'':<3} = {line.translation}")
 
     total = sum(len(lesson.lines) for lesson in lessons)
     empty = [lesson.number for lesson in lessons if not lesson.lines]
@@ -316,6 +325,8 @@ def main(argv: list[str] | None = None) -> int:
     f.set_defaults(func=cmd_fetch)
 
     p = sub.add_parser("parse", help="print the FAST dialogs from downloaded PDFs")
+    p.add_argument("--course", default="brazilian-portuguese-fast",
+                   choices=sorted(TEXT_PARSERS))
     p.add_argument("--raw", default="data/raw", help="where fetch put the files")
     p.add_argument("--lesson", type=int, help="only this lesson number")
     p.add_argument("--format", choices=("table", "json"), default="table")
