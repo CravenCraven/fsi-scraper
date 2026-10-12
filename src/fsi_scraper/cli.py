@@ -270,7 +270,7 @@ def cmd_load(args: argparse.Namespace) -> int:
     lessons = TEXT_PARSERS[course](books)
 
     with psycopg.connect(load.database_url()) as conn:
-        counts = load.load(conn, parser, resources, lessons)
+        counts = load.load(conn, parser, resources, lessons, Path(args.raw))
 
     print(f"{course}: loaded %d resources, %d lessons, %d dialog lines" % counts,
           file=sys.stderr)

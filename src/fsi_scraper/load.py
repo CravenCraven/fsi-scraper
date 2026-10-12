@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import dataclasses
 import os
+from pathlib import Path
 
 import psycopg
 
+from .fetch import sha256_of, target_path
 from .models import Resource
 from .parse_fast import Lesson
 from .sources.base import CourseParser
@@ -62,6 +64,10 @@ ON CONFLICT (course, number) DO UPDATE SET
 RETURNING id
 """
 
+SET_HASH = """
+UPDATE resource SET sha256 = %s, fetched_bytes = %s WHERE url = %s
+"""
+
 INSERT_LINE = """
 INSERT INTO dialog_line (lesson_id, seq, speaker, text, translation, page)
 VALUES (%s, %s, %s, %s, %s, %s)
@@ -77,6 +83,7 @@ def load(
     source: CourseParser,
     resources: list[Resource],
     lessons: list[Lesson],
+    raw: Path,
 ) -> tuple[int, int, int]:
     """Upsert everything. Returns (resources, lessons, dialog lines) written.
 
@@ -91,6 +98,10 @@ def load(
                                     source.page_url, source.license, source.credit))
         for resource in resources:
             cur.execute(UPSERT_RESOURCE, dataclasses.asdict(resource))
+            path = target_path(raw, resource)
+            if path.exists():
+                cur.execute(SET_HASH, (sha256_of(path), path.stat().st_size,
+                                       resource.url))
 
         for lesson in lessons:
             cur.execute(UPSERT_LESSON,

@@ -49,3 +49,8 @@ CREATE TABLE IF NOT EXISTS dialog_line (
     page        integer NOT NULL,
     UNIQUE (lesson_id, seq)
 );
+
+-- Filled in by `load` for every file that is on disk.
+-- ALTER, not CREATE: the table already exists in running databases.
+ALTER TABLE resource ADD COLUMN IF NOT EXISTS sha256        text;
+ALTER TABLE resource ADD COLUMN IF NOT EXISTS fetched_bytes bigint;
