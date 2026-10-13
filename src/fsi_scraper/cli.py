@@ -24,6 +24,8 @@ import json
 import sys
 import time
 from pathlib import Path
+from urllib import robotparser
+from urllib.parse import urlparse
 
 import requests
 
@@ -48,6 +50,7 @@ class Fetcher:
         self.session.headers["User-Agent"] = USER_AGENT
         self._last = 0.0
         self.requests_made = 0
+        self._robots: dict[str, robotparser.RobotFileParser] = {}
 
     def _cache_path(self, url: str) -> Path | None:
         if not self.cache:
@@ -60,11 +63,30 @@ class Fetcher:
         if wait > 0:
             time.sleep(wait)
 
+    def allowed(self, url: str) -> bool:
+        """True if the site's robots.txt lets us fetch this URL."""
+        parts = urlparse(url)
+        site = f"{parts.scheme}://{parts.netloc}"
+        if site not in self._robots:
+            rules = robotparser.RobotFileParser()
+            lines: list[str] = []
+            try:
+                response = self.session.get(f"{site}/robots.txt", timeout=30)
+                if response.status_code == 200:
+                    lines = response.text.splitlines()
+            except requests.RequestException:
+                pass
+            rules.parse(lines)
+            self._robots[site] = rules
+        return self._robots[site].can_fetch(USER_AGENT, url)
+
     def get(self, url: str) -> str:
         cached = self._cache_path(url)
         if cached and cached.exists():
             return cached.read_text(encoding="utf-8")
 
+        if not self.allowed(url):
+            raise requests.RequestException(f"blocked by robots.txt: {url}")
         self._wait()
         response = self.session.get(url, timeout=30)
         self._last = time.monotonic()
@@ -78,6 +100,8 @@ class Fetcher:
 
     def stream(self, url: str) -> requests.Response:
         """GET a large file. Same session and delay; the body is read later."""
+        if not self.allowed(url):
+            raise requests.RequestException(f"blocked by robots.txt: {url}")
         self._wait()
         response = self.session.get(url, timeout=60, stream=True)
         self._last = time.monotonic()
