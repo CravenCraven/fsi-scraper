@@ -98,12 +98,12 @@ class Fetcher:
             cached.write_text(response.text, encoding="utf-8")
         return response.text
 
-    def stream(self, url: str) -> requests.Response:
+    def stream(self, url: str, headers: dict | None = None) -> requests.Response:
         """GET a large file. Same session and delay; the body is read later."""
         if not self.allowed(url):
             raise requests.RequestException(f"blocked by robots.txt: {url}")
         self._wait()
-        response = self.session.get(url, timeout=60, stream=True)
+        response = self.session.get(url, timeout=60, stream=True, headers=headers)
         self._last = time.monotonic()
         self.requests_made += 1
         response.raise_for_status()
